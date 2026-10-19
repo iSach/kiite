@@ -41,7 +41,7 @@ clang -target "$TARGET" -isysroot "$SDK" -O2 -Wall -Wextra \
     -I"$SSH/include" -I"$SSL/include" -c "$ROOT/Sources/upload.c" -o "$BUILD/upload.o"
 swiftc -target "$TARGET" -sdk "$SDK" \
     "${SWIFT_FLAGS[@]}" -import-objc-header "$ROOT/Sources/upload.h" \
-    -framework AppKit -framework SwiftUI -framework CryptoKit -framework Security -framework ServiceManagement \
+    -framework AppKit -framework SwiftUI -framework CryptoKit -framework Security -framework ServiceManagement -framework Carbon \
     -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
     -L"$SSH/lib" -lssh2 -L"$SSL/lib" -lssl -lcrypto -lsqlite3 \
     "${SWIFT_SOURCES[@]}" "$BUILD/upload.o" \

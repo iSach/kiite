@@ -35,6 +35,9 @@ final class AppModel {
     var launchAtLogin = false
     var loginNeedsApproval = false
     var loginError = ""
+    var screenshotShortcut: Shortcut?
+    var recordingShortcut = false
+    var shortcutError = ""
 
     var stateLabel: String {
         if let phaseNote { return phaseNote }

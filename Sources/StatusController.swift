@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 
 struct QueuedUpload {
@@ -74,6 +75,7 @@ private struct PendingImport: Sendable {
     var items: [ImportItem]
     var draft: DestinationDraft?
     var cancellation = PreparationCancellation()
+    var autoCopy = false
 }
 
 private enum PreparedItem: Sendable {
@@ -108,6 +110,9 @@ final class StatusController: NSObject, NSPopoverDelegate {
     private var transferETA = TransferETA()
     private var keyPanelOpen = false
     private var retryPanelOpen = false
+    private lazy var hotKey = HotKey { [weak self] in self?.captureScreenshot() }
+    private var capturing = false
+    private var shortcutMonitor: Any?
     private lazy var contextMenu: NSMenu = {
         let menu = NSMenu()
         for (title, action) in [("Show All", #selector(menuShowAll)), ("Settings", #selector(menuSettings))] {
@@ -153,6 +158,7 @@ final class StatusController: NSObject, NSPopoverDelegate {
             object: button
         )
         scheduleLayoutLog(attempt: 0)
+        applyShortcut(Shortcut.saved)
 
         popover.behavior = .transient
         popover.delegate = self
@@ -200,7 +206,9 @@ final class StatusController: NSObject, NSPopoverDelegate {
                     self.chooseKey()
                 },
                 onShowUploads: { [weak self] in self?.showHistory() },
-                onSetLaunchAtLogin: { [weak self] enabled in self?.setLaunchAtLogin(enabled) }
+                onSetLaunchAtLogin: { [weak self] enabled in self?.setLaunchAtLogin(enabled) },
+                onRecordShortcut: { [weak self] in self?.recordShortcut() },
+                onClearShortcut: { [weak self] in self?.applyShortcut(nil) }
             )
         }
     }
@@ -238,6 +246,51 @@ final class StatusController: NSObject, NSPopoverDelegate {
 
     func importURLs(_ urls: [URL]) {
         receive(urls)
+    }
+
+    private func applyShortcut(_ shortcut: Shortcut?) {
+        Shortcut.saved = shortcut
+        model.screenshotShortcut = shortcut
+        model.shortcutError = hotKey.register(shortcut) ? "" : "\(shortcut?.label ?? "") is already used by macOS or another app. Turn it off there or record another."
+    }
+
+    private func recordShortcut() {
+        guard shortcutMonitor == nil else { return }
+        // Pause the current hotkey so pressing it again can be recorded.
+        hotKey.unregister()
+        model.recordingShortcut = true
+        model.shortcutError = ""
+        shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            if event.keyCode == UInt16(kVK_Escape) {
+                self.finishRecording(Shortcut.saved)
+            } else if let shortcut = Shortcut(event: event) {
+                self.finishRecording(shortcut)
+            }
+            return nil
+        }
+    }
+
+    private func finishRecording(_ shortcut: Shortcut?) {
+        if let shortcutMonitor { NSEvent.removeMonitor(shortcutMonitor) }
+        shortcutMonitor = nil
+        model.recordingShortcut = false
+        applyShortcut(shortcut)
+    }
+
+    private func captureScreenshot() {
+        guard !capturing else { return }
+        capturing = true
+        popover.performClose(nil)
+        ScreenCapture.interactive { [weak self] url in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.capturing = false
+                guard let url else { return }
+                self.model.record("screenshot captured")
+                self.receive([url], autoCopy: true)
+            }
+        }
     }
 
     @objc private func buttonFrameChanged() {
@@ -344,13 +397,13 @@ final class StatusController: NSObject, NSPopoverDelegate {
         return true
     }
 
-    private func receive(_ urls: [URL]) {
+    private func receive(_ urls: [URL], autoCopy: Bool = false) {
         if urls.isEmpty {
             model.record("rejected payload: no regular files")
             attentionPulse()
             return
         }
-        let request = PendingImport(id: UUID().uuidString, items: urls.map { ImportItem(id: UUID().uuidString, url: $0, original: nil) }, draft: store.loadDraft())
+        let request = PendingImport(id: UUID().uuidString, items: urls.map { ImportItem(id: UUID().uuidString, url: $0, original: nil) }, draft: store.loadDraft(), autoCopy: autoCopy)
         for item in request.items {
             store.insertPreparing(id: item.id, filename: item.url.lastPathComponent, batchID: request.id)
         }
@@ -388,6 +441,9 @@ final class StatusController: NSObject, NSPopoverDelegate {
                 }
                 do {
                     let snapshot = try FileSnapshot.prepare(url: item.url, cancellation: request.cancellation)
+                    if item.url.deletingLastPathComponent().standardizedFileURL == ScreenCapture.directory.standardizedFileURL {
+                        try? FileManager.default.removeItem(at: item.url)
+                    }
                     if let original = item.original,
                        ((original.bytes > 0 || !original.sha256.isEmpty) && snapshot.bytes != original.bytes
                         || original.sha256.isEmpty && snapshot.name != original.filename) {
@@ -425,7 +481,7 @@ final class StatusController: NSObject, NSPopoverDelegate {
         }
         let draft = store.canUpload(draft: request.draft) ? request.draft : store.loadDraft()
         let ready = store.canUpload(draft: draft)
-        var batch = UploadBatch(id: request.id, autoCopy: draft?.autoCopy ?? false)
+        var batch = UploadBatch(id: request.id, autoCopy: request.autoCopy || draft?.autoCopy == true)
         var queued: [QueuedUpload] = []
         var needsSettings = false
         for result in results {

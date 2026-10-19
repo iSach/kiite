@@ -1,4 +1,6 @@
 import CryptoKit
+import AppKit
+import Carbon.HIToolbox
 import Darwin
 import Foundation
 import Security
@@ -12,6 +14,7 @@ enum LocalProofs {
         if !keychain() { failed = true }
         if !PublicMapping.runTests() { failed = true }
         if !storeRoundTrip() { failed = true }
+        if !shortcut() { failed = true }
         return failed ? 1 : 0
     }
 
@@ -180,6 +183,20 @@ enum LocalProofs {
         try? FileManager.default.removeItem(atPath: path + "-wal")
         try? FileManager.default.removeItem(atPath: path + "-shm")
         return ok
+    }
+
+    private static func shortcut() -> Bool {
+        func press(_ code: Int, _ flags: NSEvent.ModifierFlags) -> Shortcut? {
+            NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0,
+                             context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: UInt16(code)).flatMap(Shortcut.init(event:))
+        }
+        guard let combo = press(kVK_ANSI_3, [.shift, .command]), combo.label == "⇧⌘3",
+              combo.carbonModifiers == UInt32(cmdKey | shiftKey),
+              press(kVK_ANSI_3, [.shift]) == nil else {
+            report("SHORTCUT fail")
+            return false
+        }
+        return true
     }
 
     private static func report(_ line: String) {

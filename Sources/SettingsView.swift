@@ -9,6 +9,8 @@ struct SettingsView: View {
     var onChooseKey: () -> Void
     var onShowUploads: () -> Void
     var onSetLaunchAtLogin: (Bool) -> Void
+    var onRecordShortcut: () -> Void
+    var onClearShortcut: () -> Void
 
     @State private var draft = DestinationDraft()
     @State private var baseline = DestinationDraft()
@@ -91,6 +93,27 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                         Stepper("Recent uploads in the menu: \(draft.recentCount)", value: $draft.recentCount, in: 1...20)
                         Toggle("Copy a verified link automatically", isOn: $draft.autoCopy)
+                    }
+                    Section("Screenshot") {
+                        LabeledContent("Capture and upload") {
+                            HStack {
+                                Button(model.recordingShortcut ? "Press a shortcut…" : model.screenshotShortcut?.label ?? "Record Shortcut") {
+                                    onRecordShortcut()
+                                }
+                                .disabled(model.recordingShortcut)
+                                if model.screenshotShortcut != nil && !model.recordingShortcut {
+                                    Button("Clear") { onClearShortcut() }
+                                }
+                            }
+                        }
+                        Text(model.recordingShortcut ? "Press the keys with ⌘, ⌃, or ⌥. Esc cancels." : "Drag a region, or press Space to pick a window. Kiite uploads the screenshot and copies its link. A shortcut macOS already uses, such as ⇧⌘3, must be turned off in System Settings → Keyboard → Keyboard Shortcuts → Screenshots first.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if !model.shortcutError.isEmpty {
+                            Text(model.shortcutError)
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
                     }
                     if !model.testLines.isEmpty || model.testRunning {
                         Section("Test Connection") {

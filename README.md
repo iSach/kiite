@@ -1,6 +1,6 @@
 # Kiite
 
-A small macOS menu-bar app. Drop a file onto the kite, upload it to your SFTP server, and copy its public link.
+A small macOS menu-bar app, inspired by Puush. Drop a file onto the kite, upload it to your SFTP server, and copy its public link.
 
 ## Install
 

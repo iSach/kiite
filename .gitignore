@@ -1,0 +1,15 @@
+.DS_Store
+/build/
+*.xcuserstate
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.log
+*.p12
+*.pfx
+*.mobileprovision
+*.key
+id_rsa
+id_ed25519
+.env
+.env.*
